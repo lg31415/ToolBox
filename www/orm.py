@@ -165,8 +165,8 @@ class Model(dict,metaclass=ModelMetaclass):
                  setattr(self,key,value)
          return value
      #新的语法 @classmethod 装时期用于把类里面定义的方法声明为该类的类方法
-     @classmethod
      #获取表里面符合条件的所有数据，类方法的第一个参数为该类名
+    @classmethod
     async def findAll(cls,where=None,args=None,**kw):
         'find objects by where clause.'
         sql=[cls.__select__]
@@ -185,9 +185,59 @@ class Model(dict,metaclass=ModelMetaclass):
             if isinstance(limit,int):
                 sql.append('?')
                 sql.append(limit)
+            elif isinstance(limit,tuple) and len(limit)==2:
+                sql.append('?,?')
+                args.extend(limit)
+            else:
+                raise ValueError('Invalid limit value :%s'% str (limit))
+            rs=await select(''.join(sql),args)
+            return [cls(**r) for r in rs]
+    # 该方法不了解
+    @classmethod
+    async def findNumber(cls,selectField,where=None,args=None):
+        'find number by select and where .'
+        sql=['select %s _num_ from `%s`'% (selectField,cls.__table__)]
+        if where:
+            sql.append('where')
+            sql.append(where)
+            rs=await select (''.join(sql),args,1)
+        if len(rs)==0:
+            return None
+        return rs[0]['_num_']
+    #主键查找方法
+    @classmethod
+    async def find(cls,pk):
+        ' find object by primary key. '
+        rs = await select('%s where `%s`=?' % (cls.__select__, cls.__primary_key__), [pk], 1)
+        if len(rs) == 0:
+            return None
+        return cls(**rs[0])
+    #一下的都是对象方法,所以可以不用传任何参数,方法内部可以使用该对象的所有属性,及其方便
+    #保存实例到数据库
+    async def save(self):
+        args = list(map(self.getValueOrDefault, self.__fields__))
+        args.append(self.getValueOrDefault(self.__primary_key__))
+        rows = await execute(self.__insert__, args)
+        if rows != 1:
+            logging.warn('failed to insert record: affected rows: %s' % rows)
+    #更新数据库数据
+    async def update(self):
+        args = list(map(self.getValue, self.__fields__))
+        args.append(self.getValue(self.__primary_key__))
+        rows = await execute(self.__update__, args)
+        if rows != 1:
+            logging.warn('failed to update by primary key: affected rows: %s' % rows)
+    #删除数据
+    async def remove(self):
+        args = [self.getValue(self.__primary_key__)]
+        rows = await execute(self.__delete__, args)
+        if rows != 1:
+            logging.warn('failed to remove by primary key: affected rows: %s' % rows)
 
-            sql.append(limit)
-
-
-
+#以下为测试
+loop = asyncio.get_event_loop()
+loop.run_until_complete(create_pool(host='127.0.0.1', port=3306,user='root', password='123456',db='mySchool', loop=loop))
+rs = loop.run_until_complete(select('select * from firstSchool',None))
+#获取到了数据库返回的数据
+print("heh:%s" % rs)
 
